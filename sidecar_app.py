@@ -9,7 +9,7 @@ COMFY_OUTPUT = os.path.join(COMFY_ROOT, "output")
 HISTORY_FILE = os.path.join(WORKSPACE_ROOT, "sidecar_history.json")
 TOKENS_FILE = os.path.join(WORKSPACE_ROOT, "tokens.txt")
 VENV_PYTHON = os.path.join(WORKSPACE_ROOT, "venv/bin/python")
-VENV_PIP = "/root/.local/bin/uv"
+VENV_PIP = os.path.join(WORKSPACE_ROOT, "venv/bin/uv")
 
 os.makedirs(COMFY_OUTPUT, exist_ok=True)
 os.makedirs("/workspace/logs", exist_ok=True)
@@ -363,6 +363,12 @@ def app_store_action(app_name, action):
     env["PATH"] = f"/root/.local/bin:/workspace/venv/bin:{env.get('PATH', '')}"
 
     try:
+        # --- ADD THIS SELF-HEALING BLOCK ---
+        if not os.path.exists(VENV_PIP):
+            log_output += "📦 Restoring 'uv' package manager...\n"; yield log_output
+            for line in run_cmd_with_logs([VENV_PYTHON, "-m", "pip", "install", "uv"]): log_output += line; yield log_output
+        # -----------------------------------
+
         if app_name == "ComfyUI":
             if not os.path.exists(COMFY_ROOT):
                 log_output += "📦 Cloning ComfyUI...\n"; yield log_output
