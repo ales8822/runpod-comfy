@@ -2,7 +2,6 @@ import gradio as gr
 import os, subprocess, re, requests, shutil, json, glob, time
 from urllib.parse import urlparse
 
-# Ensure environment paths map perfectly to our Docker/RunPod container
 WORKSPACE_ROOT = "/workspace"
 COMFY_ROOT = os.path.join(WORKSPACE_ROOT, "ComfyUI")
 COMFY_OUTPUT = os.path.join(COMFY_ROOT, "output")
@@ -56,6 +55,19 @@ def append_history(name, path, is_node, size_str):
     hist =[h for h in hist if h['path'] != path]
     hist.append({"name": name, "path": path, "is_node": is_node, "size": size_str})
     save_history(hist)
+
+def load_media(file_path):
+    if isinstance(file_path, list): file_path = file_path[0] if file_path else None
+    if not file_path or not os.path.isfile(file_path):
+        return gr.update(visible=False), gr.update(visible=False)
+    
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']:
+        return gr.update(value=file_path, visible=True), gr.update(visible=False)
+    elif ext in['.mp4', '.mkv', '.avi', '.webm']:
+        return gr.update(visible=False), gr.update(value=file_path, visible=True)
+    
+    return gr.update(visible=False), gr.update(visible=False)
 
 # ==============================================================================
 # TAB 1: DOWNLOADER & SYNC LOGIC
@@ -232,7 +244,6 @@ def sync_generator(file_path):
     except:
         yield update_log("⚠️ Done, but ComfyUI is not responding to API refresh."), render_queue(), gr.update(value=None)
 
-
 # ==============================================================================
 # TAB 2: DATASET AUTO-TAGGER (FLORENCE-2)
 # ==============================================================================
@@ -262,7 +273,7 @@ def run_florence_tagger(folder_path, prompt):
         return
 
     images =[]
-    for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]:
+    for ext in["*.png", "*.jpg", "*.jpeg", "*.webp"]:
         images.extend(glob.glob(os.path.join(folder_path, ext)))
         
     if not images:
@@ -303,11 +314,10 @@ def get_gateway_links():
     pod_id = os.environ.get("RUNPOD_POD_ID")
     apps = {
         "ComfyUI": ("8188", "🎨"),
-        "Filebrowser": ("8083", "📂"), 
+        "Filebrowser": ("8083", "📂"),
         "Kohya_ss": ("7860", "🏋️"),
         "Open-WebUI": ("8082", "💬"),
-        "Langflow": ("3000", "⛓️"),
-        "VS Code": ("8888", "💻")
+        "Langflow": ("3000", "⛓️")
     }
     
     html = "<div style='display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px;'>"
@@ -364,30 +374,25 @@ def app_store_action(app_name, action):
     env["PATH"] = f"/root/.local/bin:/workspace/venv/bin:{env.get('PATH', '')}"
 
     try:
-        # --- ADD THIS SELF-HEALING BLOCK ---
         if not os.path.exists(VENV_PIP):
             log_output += "📦 Restoring 'uv' package manager...\n"; yield log_output
             for line in run_cmd_with_logs([VENV_PYTHON, "-m", "pip", "install", "uv"]): log_output += line; yield log_output
-        # -----------------------------------
 
         if app_name == "ComfyUI":
             if not os.path.exists(COMFY_ROOT):
                 log_output += "📦 Cloning ComfyUI...\n"; yield log_output
                 for line in run_cmd_with_logs(["git", "clone", "https://github.com/comfyanonymous/ComfyUI.git", COMFY_ROOT]): log_output += line; yield log_output
                 
-                # We strip PyTorch because entrypoint.sh already installed the perfect GPU-matched version
                 log_output += "\n🧹 Stripping base PyTorch from requirements...\n"; yield log_output
                 subprocess.run(["sed", "-i", "-E", "/^(torch|torchvision|torchaudio|xformers)/Id", f"{COMFY_ROOT}/requirements.txt"])
                 
                 log_output += "\n⚙️ Installing ComfyUI dependencies via uv...\n"; yield log_output
                 for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", f"{COMFY_ROOT}/requirements.txt"]): log_output += line; yield log_output
 
-            # Memory Optimization Environment Variables
             env["CUDA_MODULE_LOADING"] = "LAZY"
             env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
             env["TORCH_CUDNN_V8_API_ENABLED"] = "1"
 
-            # Check if SageAttention was successfully compiled by the bootloader
             attn_args =[]
             try:
                 subprocess.run([VENV_PYTHON, "-c", "import sageattention"], check=True, capture_output=True)
@@ -399,10 +404,8 @@ def app_store_action(app_name, action):
             log_output += "\n🚀 Starting ComfyUI on port 8188...\n"; yield log_output
             log_file = open("/workspace/logs/comfyui.log", "w")
             
-            # Added --force-fp16 and --fast flags from your script
             cmd =[VENV_PYTHON, "main.py", "--listen", "0.0.0.0", "--port", "8188", "--force-fp16", "--fast"] + attn_args
             bg_processes[app_name] = subprocess.Popen(cmd, cwd=COMFY_ROOT, env=env, stdout=log_file, stderr=subprocess.STDOUT)
-            
             yield log_output + "✅ ComfyUI is running! (Port 8188)\n"
 
         elif app_name == "Kohya_ss":
@@ -477,7 +480,7 @@ def toggle_cloudflare(token, action):
 
 def refresh_history_ui():
     hist = load_history()
-    choices = [f"{'📦 NODE' if h['is_node'] else '🗂️ MODEL'} | {h['name']} ({h['size']}) -> {h['path']}" for h in hist if os.path.exists(h['path'])]
+    choices =[f"{'📦 NODE' if h['is_node'] else '🗂️ MODEL'} | {h['name']} ({h['size']}) -> {h['path']}" for h in hist if os.path.exists(h['path'])]
     return gr.update(choices=choices)
 
 def delete_selected_files(selected_strings):
@@ -527,6 +530,16 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Universal Sidecar") as demo:
                     
                     start_app.click(fn=app_store_action, inputs=[gr.State(internal_name), gr.State("Start")], outputs=status_log)
                     stop_app.click(fn=app_store_action, inputs=[gr.State(internal_name), gr.State("Stop")], outputs=status_log)
+
+        with gr.TabItem("🖼️ Output Browser"):
+            gr.Markdown("Click on an image or video in the tree to view it.")
+            with gr.Row():
+                with gr.Column(scale=1): 
+                    file_exp = gr.FileExplorer(root_dir=COMFY_OUTPUT, label="Outputs", file_count="single", interactive=True)
+                with gr.Column(scale=2): 
+                    img_viewer = gr.Image(label="Viewer", visible=False, interactive=False)
+                    vid_viewer = gr.Video(label="Viewer", visible=False, interactive=False)
+            file_exp.change(fn=load_media, inputs=file_exp, outputs=[img_viewer, vid_viewer])
 
         with gr.TabItem("📦 Downloader & Sync"):
             gr.Markdown("**Nodes** (Raw URLs or `.git`) & **Models** (Direct URL with tags) | Auto-injects tokens.txt")
