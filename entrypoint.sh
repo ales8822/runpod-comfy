@@ -10,6 +10,9 @@ export VENV_PYTHON="${VENV_DIR}/bin/python"
 mkdir -p "$LOG_DIR"
 echo "🚀 Starting RunPod Native Boot sequence..."
 
+# Install system build tools required for SageAttention compilation
+echo "🛠️ Installing system build tools..."
+apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0
 # ----------------------------------------------------------------------------
 # 1. GPU DETECTION
 # ----------------------------------------------------------------------------
