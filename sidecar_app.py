@@ -299,7 +299,7 @@ def run_florence_tagger(folder_path, prompt):
             success_count += 1
             yield f"✅[{i+1}/{len(images)}] Tagged: {os.path.basename(img_path)}\n   -> {caption[:50]}..."
         except Exception as e:
-            yield f"❌ [{i+1}/{len(images)}] Failed on {os.path.basename(img_path)}: {str(e)}"
+            yield f"❌[{i+1}/{len(images)}] Failed on {os.path.basename(img_path)}: {str(e)}"
 
     del model
     del processor
@@ -371,12 +371,16 @@ def app_store_action(app_name, action):
         return
 
     env = os.environ.copy()
-    env["PATH"] = f"/root/.local/bin:/workspace/venv/bin:{env.get('PATH', '')}"
+    # Add /usr/local/bin to PATH for Ollama
+    env["PATH"] = f"/usr/local/bin:/root/.local/bin:/workspace/venv/bin:{env.get('PATH', '')}"
 
     try:
+        # FIXED SELF-HEALING: Use curl instead of pip to install uv directly into the venv bin folder
         if not os.path.exists(VENV_PIP):
             log_output += "📦 Restoring 'uv' package manager...\n"; yield log_output
-            for line in run_cmd_with_logs([VENV_PYTHON, "-m", "pip", "install", "uv"]): log_output += line; yield log_output
+            uv_dir = os.path.dirname(VENV_PIP)
+            install_cmd = f"curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR={uv_dir} sh"
+            for line in run_cmd_with_logs(["sh", "-c", install_cmd]): log_output += line; yield log_output
 
         if app_name == "ComfyUI":
             if not os.path.exists(COMFY_ROOT):
@@ -435,13 +439,17 @@ def app_store_action(app_name, action):
             yield log_output + "✅ Open-WebUI is running! (Port 8082)\n"
 
         elif app_name == "Ollama":
-            if not shutil.which("ollama"):
+            # Check for ollama in both PATH and /usr/local/bin
+            if not shutil.which("ollama") and not os.path.exists("/usr/local/bin/ollama"):
                 log_output += "📦 Installing Ollama binary...\n"; yield log_output
-                subprocess.run(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"])
+                for line in run_cmd_with_logs(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"]): log_output += line; yield log_output
+            
             env["OLLAMA_HOST"] = "0.0.0.0:11434"
             log_output += "\n🚀 Starting Ollama Core...\n"; yield log_output
             log_file = open("/workspace/logs/ollama.log", "w")
-            bg_processes[app_name] = subprocess.Popen(["ollama", "serve"], env=env, stdout=log_file, stderr=subprocess.STDOUT)
+            
+            ollama_bin = shutil.which("ollama") or "/usr/local/bin/ollama"
+            bg_processes[app_name] = subprocess.Popen([ollama_bin, "serve"], env=env, stdout=log_file, stderr=subprocess.STDOUT)
             yield log_output + "✅ Ollama is running! (Port 11434)\n"
 
         elif app_name == "Langflow":
