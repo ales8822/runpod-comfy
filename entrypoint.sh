@@ -19,7 +19,7 @@ fi
 export PATH="/root/.local/bin:$PATH"
 
 # 2. Check for and create persistent Virtual Environment
-if[ ! -d "$VENV_DIR" ]; then
+if [ ! -d "$VENV_DIR" ]; then
     echo "🌱 Creating persistent virtual environment in $VENV_DIR..."
     uv venv "$VENV_DIR"
 fi
