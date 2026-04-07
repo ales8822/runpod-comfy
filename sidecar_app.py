@@ -303,6 +303,7 @@ def get_gateway_links():
     pod_id = os.environ.get("RUNPOD_POD_ID")
     apps = {
         "ComfyUI": ("8188", "🎨"),
+        "Filebrowser": ("8083", "📂"), 
         "Kohya_ss": ("7860", "🏋️"),
         "Open-WebUI": ("8082", "💬"),
         "Langflow": ("3000", "⛓️"),
@@ -373,12 +374,35 @@ def app_store_action(app_name, action):
             if not os.path.exists(COMFY_ROOT):
                 log_output += "📦 Cloning ComfyUI...\n"; yield log_output
                 for line in run_cmd_with_logs(["git", "clone", "https://github.com/comfyanonymous/ComfyUI.git", COMFY_ROOT]): log_output += line; yield log_output
+                
+                # We strip PyTorch because entrypoint.sh already installed the perfect GPU-matched version
+                log_output += "\n🧹 Stripping base PyTorch from requirements...\n"; yield log_output
+                subprocess.run(["sed", "-i", "-E", "/^(torch|torchvision|torchaudio|xformers)/Id", f"{COMFY_ROOT}/requirements.txt"])
+                
                 log_output += "\n⚙️ Installing ComfyUI dependencies via uv...\n"; yield log_output
                 for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", f"{COMFY_ROOT}/requirements.txt"]): log_output += line; yield log_output
 
+            # Memory Optimization Environment Variables
+            env["CUDA_MODULE_LOADING"] = "LAZY"
+            env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            env["TORCH_CUDNN_V8_API_ENABLED"] = "1"
+
+            # Check if SageAttention was successfully compiled by the bootloader
+            attn_args =[]
+            try:
+                subprocess.run([VENV_PYTHON, "-c", "import sageattention"], check=True, capture_output=True)
+                attn_args.append("--use-sage-attention")
+                log_output += "✨ SageAttention detected and enabled!\n"; yield log_output
+            except:
+                pass
+
             log_output += "\n🚀 Starting ComfyUI on port 8188...\n"; yield log_output
             log_file = open("/workspace/logs/comfyui.log", "w")
-            bg_processes[app_name] = subprocess.Popen([VENV_PYTHON, "main.py", "--listen", "0.0.0.0", "--port", "8188"], cwd=COMFY_ROOT, stdout=log_file, stderr=subprocess.STDOUT)
+            
+            # Added --force-fp16 and --fast flags from your script
+            cmd =[VENV_PYTHON, "main.py", "--listen", "0.0.0.0", "--port", "8188", "--force-fp16", "--fast"] + attn_args
+            bg_processes[app_name] = subprocess.Popen(cmd, cwd=COMFY_ROOT, env=env, stdout=log_file, stderr=subprocess.STDOUT)
+            
             yield log_output + "✅ ComfyUI is running! (Port 8188)\n"
 
         elif app_name == "Kohya_ss":
