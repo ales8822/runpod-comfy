@@ -12,7 +12,8 @@ echo "🚀 Starting RunPod Native Boot sequence..."
 
 # Install system build tools required for SageAttention compilation
 echo "🛠️ Installing system build tools..."
-apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0
+apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0 curl psmisc
+
 # ----------------------------------------------------------------------------
 # 1. GPU DETECTION
 # ----------------------------------------------------------------------------
@@ -37,15 +38,17 @@ if ! command -v uv &> /dev/null; then
 fi
 export PATH="/root/.local/bin:$PATH"
 
-if [ ! -d "$VENV_DIR" ]; then
+if[ ! -d "$VENV_DIR" ]; then
     echo "🌱 Creating persistent virtual environment in $VENV_DIR..."
     uv venv "$VENV_DIR"
 fi
 
+# Ensure build tools are in the venv for SageAttention
+uv pip install --python "$VENV_PYTHON" setuptools wheel
+
 # ----------------------------------------------------------------------------
-# 3. DYNAMIC PYTORCH INSTALLATION (AI Base Environment)
+# 3. DYNAMIC PYTORCH INSTALLATION
 # ----------------------------------------------------------------------------
-# We install PyTorch here so all apps in the workspace share the optimized version
 if ! "$VENV_PYTHON" -c "import torch" &> /dev/null; then
     if [[ "$GPU_CLASS" == "BLACKWELL" ]]; then
         echo "⚙️ Installing PyTorch 2.8 Nightly (SDPA Native) for RTX 5090..."
@@ -73,7 +76,7 @@ fi
 export FB_DB="$INSTALL_DIR/filebrowser.db"
 ADMIN_PASS=${ACCESS_PASSWORD:-"runpod_default"}
 
-if [ ! -f "$FB_DB" ]; then
+if[ ! -f "$FB_DB" ]; then
     filebrowser config init -d "$FB_DB"
     filebrowser config set -a 0.0.0.0 -p 8083 -r "$INSTALL_DIR" -d "$FB_DB"
     filebrowser users add admin "$ADMIN_PASS" --perm.admin -d "$FB_DB"
