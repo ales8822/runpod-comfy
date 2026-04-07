@@ -70,7 +70,7 @@ fi
 export FB_DB="$INSTALL_DIR/filebrowser.db"
 ADMIN_PASS=${ACCESS_PASSWORD:-"runpod_default"}
 
-if[ ! -f "$FB_DB" ]; then
+if [ ! -f "$FB_DB" ]; then
     filebrowser config init -d "$FB_DB"
     filebrowser config set -a 0.0.0.0 -p 8083 -r "$INSTALL_DIR" -d "$FB_DB"
     filebrowser users add admin "$ADMIN_PASS" --perm.admin -d "$FB_DB"
