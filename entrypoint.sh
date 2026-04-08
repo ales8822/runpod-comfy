@@ -12,7 +12,7 @@ echo "🚀 Starting RunPod Native Boot sequence..."
 
 # Install system build tools (ADDED zstd for Ollama)
 echo "🛠️ Installing system build tools..."
-apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0 curl psmisc zstd
+apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0 curl psmisc zstd python3-tk
 
 # ----------------------------------------------------------------------------
 # 1. GPU DETECTION

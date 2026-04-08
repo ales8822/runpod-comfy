@@ -410,7 +410,7 @@ def app_store_action(app_name, action):
             for line in run_cmd_with_logs(["sh", "-c", install_cmd]): log_output += line; yield log_output
 
         if app_name == "ComfyUI":
-            if not os.path.exists(COMFY_ROOT):
+            if not os.path.exists(os.path.join(COMFY_ROOT, "main.py")):
                 log_output += "📦 Cloning ComfyUI...\n"; yield log_output
                 for line in run_cmd_with_logs(["git", "clone", "https://github.com/comfyanonymous/ComfyUI.git", COMFY_ROOT]): log_output += line; yield log_output
                 
