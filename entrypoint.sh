@@ -10,9 +10,9 @@ export VENV_PYTHON="${VENV_DIR}/bin/python"
 mkdir -p "$LOG_DIR"
 echo "🚀 Starting RunPod Native Boot sequence..."
 
-# Install system build tools required for SageAttention compilation
+# Install system build tools (ADDED zstd for Ollama)
 echo "🛠️ Installing system build tools..."
-apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0 curl psmisc
+apt-get update -y && apt-get install -y build-essential ninja-build libgl1 libglib2.0-0 curl psmisc zstd
 
 # ----------------------------------------------------------------------------
 # 1. GPU DETECTION
@@ -43,7 +43,6 @@ if [ ! -d "$VENV_DIR" ]; then
     uv venv "$VENV_DIR"
 fi
 
-# Ensure build tools are in the venv for SageAttention
 uv pip install --python "$VENV_PYTHON" setuptools wheel
 
 # ----------------------------------------------------------------------------
@@ -66,8 +65,20 @@ if ! "$VENV_PYTHON" -c "import torch" &> /dev/null; then
 fi
 
 # ----------------------------------------------------------------------------
-# 4. FILEBROWSER SETUP
+# 4. VSCODE & FILEBROWSER SETUP
 # ----------------------------------------------------------------------------
+# Install VSCode Server
+if ! command -v code-server &> /dev/null; then
+    echo "💻 Installing VS Code Server..."
+    curl -fsSL https://code-server.dev/install.sh | sh
+fi
+
+# Kill RunPod's default JupyterLab on 8888 so VSCode can take over
+fuser -k 8888/tcp || true
+echo "▶️ Starting VS Code Server on Port 8888..."
+nohup code-server --bind-addr 0.0.0.0:8888 --auth none /workspace > "$LOG_DIR/vscode.log" 2>&1 &
+
+
 if ! command -v filebrowser &> /dev/null; then
     echo "📂 Installing Filebrowser..."
     curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash

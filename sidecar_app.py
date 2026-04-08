@@ -70,7 +70,35 @@ def load_media(file_path):
     return gr.update(visible=False), gr.update(visible=False)
 
 # ==============================================================================
-# TAB 1: DOWNLOADER & SYNC LOGIC
+# TAB 1: LOG VIEWER
+# ==============================================================================
+LOG_FILES = {
+    "ComfyUI": "/workspace/logs/comfyui.log",
+    "Kohya_ss": "/workspace/logs/kohya.log",
+    "Open-WebUI": "/workspace/logs/openwebui.log",
+    "Ollama": "/workspace/logs/ollama.log",
+    "Langflow": "/workspace/logs/langflow.log",
+    "Sidecar": "/workspace/logs/sidecar.log",
+    "Filebrowser": "/workspace/logs/filebrowser.log",
+    "VS Code": "/workspace/logs/vscode.log"
+}
+
+def get_log_content(app_name):
+    log_path = LOG_FILES.get(app_name)
+    if log_path and os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+            return content[-50000:] # Load only last 50k chars to prevent browser lag
+    return f"Log file not found or empty for {app_name}."
+
+def get_log_file(app_name):
+    log_path = LOG_FILES.get(app_name)
+    if log_path and os.path.exists(log_path):
+        return log_path
+    return None
+
+# ==============================================================================
+# TAB 2: DOWNLOADER & SYNC LOGIC
 # ==============================================================================
 current_process = None
 cancel_requested = False
@@ -245,7 +273,7 @@ def sync_generator(file_path):
         yield update_log("⚠️ Done, but ComfyUI is not responding to API refresh."), render_queue(), gr.update(value=None)
 
 # ==============================================================================
-# TAB 2: DATASET AUTO-TAGGER (FLORENCE-2)
+# TAB 3: DATASET AUTO-TAGGER (FLORENCE-2)
 # ==============================================================================
 def run_florence_tagger(folder_path, prompt):
     if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
@@ -308,12 +336,13 @@ def run_florence_tagger(folder_path, prompt):
     yield f"\n🎉 Finished! Successfully tagged {success_count} / {len(images)} images.\n🧹 VRAM Cleared!"
 
 # ==============================================================================
-# TAB 3: GATEWAY DASHBOARD
+# TAB 4: GATEWAY DASHBOARD
 # ==============================================================================
 def get_gateway_links():
     pod_id = os.environ.get("RUNPOD_POD_ID")
     apps = {
         "ComfyUI": ("8188", "🎨"),
+        "VS Code": ("8888", "💻"),
         "Filebrowser": ("8083", "📂"),
         "Kohya_ss": ("7860", "🏋️"),
         "Open-WebUI": ("8082", "💬"),
@@ -342,7 +371,7 @@ def get_gateway_links():
     return html
 
 # ==============================================================================
-# TAB 4: THE APP STORE
+# TAB 5: THE APP STORE
 # ==============================================================================
 bg_processes = {}
 
@@ -371,11 +400,9 @@ def app_store_action(app_name, action):
         return
 
     env = os.environ.copy()
-    # Add /usr/local/bin to PATH for Ollama
     env["PATH"] = f"/usr/local/bin:/root/.local/bin:/workspace/venv/bin:{env.get('PATH', '')}"
 
     try:
-        # FIXED SELF-HEALING: Use curl instead of pip to install uv directly into the venv bin folder
         if not os.path.exists(VENV_PIP):
             log_output += "📦 Restoring 'uv' package manager...\n"; yield log_output
             uv_dir = os.path.dirname(VENV_PIP)
@@ -390,8 +417,9 @@ def app_store_action(app_name, action):
                 log_output += "\n🧹 Stripping base PyTorch from requirements...\n"; yield log_output
                 subprocess.run(["sed", "-i", "-E", "/^(torch|torchvision|torchaudio|xformers)/Id", f"{COMFY_ROOT}/requirements.txt"])
                 
-                log_output += "\n⚙️ Installing ComfyUI dependencies via uv...\n"; yield log_output
-                for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", f"{COMFY_ROOT}/requirements.txt"]): log_output += line; yield log_output
+            # Always run requirements install just in case
+            log_output += "\n⚙️ Checking ComfyUI dependencies via uv...\n"; yield log_output
+            for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", "requirements.txt"], cwd=COMFY_ROOT): log_output += line; yield log_output
 
             env["CUDA_MODULE_LOADING"] = "LAZY"
             env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -417,9 +445,12 @@ def app_store_action(app_name, action):
             if not os.path.exists(kohya_dir):
                 log_output += "📦 Cloning Kohya_ss...\n"; yield log_output
                 for line in run_cmd_with_logs(["git", "clone", "--recursive", "https://github.com/bmaltais/kohya_ss.git", kohya_dir]): log_output += line; yield log_output
-                log_output += "\n⚙️ Installing Kohya dependencies via uv...\n"; yield log_output
-                req_file = f"{kohya_dir}/requirements_linux.txt" if os.path.exists(f"{kohya_dir}/requirements_linux.txt") else f"{kohya_dir}/requirements.txt"
-                for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", req_file]): log_output += line; yield log_output
+                
+            log_output += "\n⚙️ Installing Kohya dependencies via uv...\n"; yield log_output
+            req_file = "requirements_linux.txt" if os.path.exists(f"{kohya_dir}/requirements_linux.txt") else "requirements.txt"
+            
+            # FIXED: Added cwd=kohya_dir so it finds the local ./sd-scripts folder correctly!
+            for line in run_cmd_with_logs([VENV_PIP, "pip", "install", "--python", VENV_PYTHON, "-r", req_file], cwd=kohya_dir): log_output += line; yield log_output
 
             gui_script = "gui.py" if os.path.exists(f"{kohya_dir}/gui.py") else "kohya_gui.py"
             log_output += "\n🚀 Starting Kohya_ss on port 7860...\n"; yield log_output
@@ -439,7 +470,6 @@ def app_store_action(app_name, action):
             yield log_output + "✅ Open-WebUI is running! (Port 8082)\n"
 
         elif app_name == "Ollama":
-            # Check for ollama in both PATH and /usr/local/bin
             if not shutil.which("ollama") and not os.path.exists("/usr/local/bin/ollama"):
                 log_output += "📦 Installing Ollama binary...\n"; yield log_output
                 for line in run_cmd_with_logs(["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"]): log_output += line; yield log_output
@@ -463,7 +493,7 @@ def app_store_action(app_name, action):
     except Exception as e: yield log_output + f"\n❌ Error: {str(e)}"
 
 # ==============================================================================
-# TAB 5 & 6: CLOUDFLARE & HISTORY
+# TAB 6 & 7: CLOUDFLARE & HISTORY
 # ==============================================================================
 def toggle_cloudflare(token, action):
     global bg_processes
@@ -538,6 +568,19 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Universal Sidecar") as demo:
                     
                     start_app.click(fn=app_store_action, inputs=[gr.State(internal_name), gr.State("Start")], outputs=status_log)
                     stop_app.click(fn=app_store_action, inputs=[gr.State(internal_name), gr.State("Stop")], outputs=status_log)
+
+        with gr.TabItem("📝 System Logs"):
+            gr.Markdown("View and download live console logs for your apps to debug errors.")
+            with gr.Row():
+                log_dropdown = gr.Dropdown(choices=list(LOG_FILES.keys()), value="ComfyUI", label="Select App")
+                refresh_log_btn = gr.Button("🔄 Refresh Log", variant="primary")
+                download_log_btn = gr.DownloadButton("📥 Download Log File")
+            
+            log_display = gr.Code(label="Log Output", language="shell", lines=30, interactive=False)
+
+            refresh_log_btn.click(fn=get_log_content, inputs=log_dropdown, outputs=log_display)
+            log_dropdown.change(fn=get_log_content, inputs=log_dropdown, outputs=log_display)
+            log_dropdown.change(fn=get_log_file, inputs=log_dropdown, outputs=download_log_btn)
 
         with gr.TabItem("🖼️ Output Browser"):
             gr.Markdown("Click on an image or video in the tree to view it.")
